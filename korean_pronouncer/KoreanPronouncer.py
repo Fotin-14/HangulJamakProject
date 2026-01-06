@@ -2,7 +2,8 @@ import os
 import sys
 from konlpy.tag import Mecab
 from typing import List, Tuple
-from korean_romanizer.romanizer import Romanizer
+# from korean_romanizer.romanizer import Romanizer
+from .custom_romanizer import Romanizer
 from .rules_table import (
     CHO_LIST,
     JUNG_LIST,
@@ -140,6 +141,7 @@ class KoreanPronouncer:
                  final_word += " "
                  
         return final_word
+    
     def _romanize_syllable(self, cho: str, jung: str, jong: str) -> str:
         """
         초성, 중성, 종성을 받아 로마자로 변환합니다.
@@ -172,27 +174,27 @@ class KoreanPronouncer:
     def transformed_sentence(self):
         return self._recombine_korean(self._phonetic_transformer())
     
-    def list_romanizer(self) -> List[str]:
-        romanized_list: List[str] = []
-        modified_stc = self._phonetic_transformer()
+    # def list_romanizer(self) -> List[str]:
+    #     romanized_list: List[str] = []
+    #     modified_stc = self._phonetic_transformer()
 
-        for i, part in enumerate(modified_stc):
+    #     for i, part in enumerate(modified_stc):
 
-            for syllable_jamo_list in part:
-                jamo_only = syllable_jamo_list[:3]
+    #         for syllable_jamo_list in part:
+    #             jamo_only = syllable_jamo_list[:3]
 
-                cho = jamo_only[0]
-                jung = jamo_only[1]
-                jong = jamo_only[2] if len(jamo_only) > 2 and jamo_only[2] else ""
+    #             cho = jamo_only[0]
+    #             jung = jamo_only[1]
+    #             jong = jamo_only[2] if len(jamo_only) > 2 and jamo_only[2] else ""
 
-                combined_romanized = self._romanize_syllable(cho, jung, jong) if cho in ONSET_ROMA else cho
+    #             combined_romanized = self._romanize_syllable(cho, jung, jong) if cho in ONSET_ROMA else cho
                 
-                romanized_list.append(combined_romanized)
+    #             romanized_list.append(combined_romanized)
 
-            if i < len(modified_stc) - 1:
-                romanized_list.append(" ")
+    #         if i < len(modified_stc) - 1:
+    #             romanized_list.append(" ")
                 
-        return romanized_list
+    #     return romanized_list
 
     def hangul_to_romanized(self):
         result = self.transformed_sentence()
