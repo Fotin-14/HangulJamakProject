@@ -1,3 +1,4 @@
+import copy
 from typing import List
 from .rules_table import (
     CHO_LIST,
@@ -34,7 +35,7 @@ def rule12(jong, next_cho):
         elif next_cho == 'ㅅ':
             return ('', 'ㅆ')
         elif next_cho == 'ㄴ':
-            return ('ㄴ', '')
+            return ('ㄴ', 'ㄴ')
         else:
             return ('', '')
     elif jong in ['ㄶ', 'ㅀ']:
@@ -42,6 +43,8 @@ def rule12(jong, next_cho):
             return (ASP_MAP2[jong], ASP_MAP[next_cho])
         elif next_cho == 'ㅅ':
             return (ASP_MAP2[jong], 'ㅆ')
+        elif next_cho == 'ㄴ':
+            return ('ㄴ', 'ㄴ')
         else:
             return ('', ASP_MAP2[jong])
     else:
@@ -93,8 +96,8 @@ def rule23(jong, next_cho):
 
 def rule24(jong, tag, next_cho, next_jung, next_tag):
     if next_cho == 'ㄱ' and next_jung == 'ㅣ' and next_tag == 'VV':
-        return jong, next_cho
-    elif FINAL_NEUTRAL_MAP[jong] in ['ㄴ','ㅁ']  and tag.startswith('V') and next_cho in TENSE_MAP:
+        return FINAL_NEUTRAL_MAP[jong], next_cho
+    elif FINAL_NEUTRAL_MAP[jong] in ['ㄴ','ㅁ']  and tag.startswith('V') and next_cho in TENSE_MAP and next_tag.startswith("E"):
         return (FINAL_NEUTRAL_MAP[jong], TENSE_MAP[next_cho])
     else:
         return jong, next_cho
@@ -108,16 +111,25 @@ def rule30(next_cho):
     else:
         return 'ㄴ'
 #------------------------------------
+def algorithm(word: List[List[str]], processed: set = None) -> List[List[str]]:
+    original_word = copy.deepcopy(word)
 
-def algorithm(word: List[List[str]]) -> List[List[str]]:
+    if processed is None:
+        processed = set()
+
     for i in range(len(word)):
+        if i in processed:
+            continue
+
         cho, jung, jong, tag = word[i]
+
+        if jung == 'ㅢ' and jong == '' and i != 0:
+            word[i][1] = 'ㅔ'
+
         if i+1 < len(word):
             next_cho, next_jung, _, next_tag = word[i+1]
         elif i+1 == len(word):
             next_cho = 't'
-        # test
-        # print(f"jong: {jong}, next_cho: {next_cho}")
 
         if jong != '' and jong in JONG_LIST:
             if next_cho == 't':
@@ -137,7 +149,7 @@ def algorithm(word: List[List[str]]) -> List[List[str]]:
                     elif jong == 'ㄴ' and next_cho == 'ㄹ':
                         word[i][2] = rule20(jong, next_cho)
                     elif jong == 'ㄴ' and next_cho in TENSE_MAP:
-                        word[i][2], word[i+1][0] = rule24(jong, tag, next_cho, next_jung, next_tag)
+                            word[i][2], word[i+1][0] = rule24(jong, tag, next_cho, next_jung, next_tag)
 
                     elif jong == 'ㄷ' and next_cho in ['ㄴ', 'ㅁ']:
                         word[i][2] = rule18(jong)
@@ -170,15 +182,13 @@ def algorithm(word: List[List[str]]) -> List[List[str]]:
                     elif jong in {'ㅋ','ㅅ','ㅊ','ㅌ','ㅍ'} and next_cho in TENSE_MAP:
                         word[i][2], word[i+1][0] = rule23(jong, next_cho)
 
-                    elif jong == 'ㅅ' and next_cho in TENSE_MAP:
+                    elif jong == 'ㅅ' and next_cho in TENSE_MAP and tag == "NNG_C":
                         word[i][2], word[i+1][0] = rule30(next_cho)
-                    elif jong == 'ㅅ' and next_cho in {'ㄴ', 'ㅁ'}:
+                    elif jong == 'ㅅ' and tag == "NNG_C" and next_cho in {'ㄴ', 'ㅁ'}:
                         word[i+1][0] = rule30(next_cho)
 
                     elif jong == 'ㅇ' and next_cho == 'ㄹ':
                         word[i+1][0] = rule19(next_cho)
-                    elif jong == 'ㅇ' and next_cho == 'ㅇ':
-                        continue
 
                     elif jong == 'ㅈ' and next_cho in {'ㄴ', 'ㅁ'}:
                         word[i][2] = rule18(jong)
@@ -265,15 +275,24 @@ def algorithm(word: List[List[str]]) -> List[List[str]]:
                         else:
                             word[i][2] = FINAL_NEUTRAL_MAP[jong]
 
-            if next_cho == "ㅇ":  # 다음 초성 = 모음 
+            if next_cho == "ㅇ":         
                 if jong in HOT_BATCHIM:
                     if jong == 'ㅎ':
                         word[i][2] = ''
-                    elif jong in {'ㄷ','ㅌ'} and next_jung == 'ㅣ':
+                    elif jong in {'ㄷ','ㅌ'} and next_jung == 'ㅣ' and tag == next_tag:
                         word[i][2], word[i+1][0] = rule17(jong, next_cho, next_jung)
-                    elif jong == 'ㅅ' and next_jung == 'ㅣ' and tag.startswith('N') and next_tag.startswith('N'):
+                        print("17항")
+                    elif (next_jung in {'ㅣ','ㅑ','ㅕ','ㅛ','ㅠ'} and 
+                            ((tag.startswith("NNG_C") and 
+                            next_tag.startswith("NNG_C") and 
+                            tag != next_tag) or
+                            tag == "MM")):
+                                word[i+1][0] = rule29()
+                    elif jong == 'ㅅ' and next_jung == 'ㅣ' and next_tag.startswith("NNG_C"):
                         word[i][2] = 'ㄴ'
                         word[i+1][0] = rule30(next_cho)
+                    elif jong == 'ㅇ':
+                        continue
                     else:
                         if next_jung in {'ㅏ','ㅓ','ㅗ','ㅜ','ㅟ'} and not next_tag.startswith(('J', 'E', 'X')):
                             word[i][2] = ''
@@ -281,20 +300,32 @@ def algorithm(word: List[List[str]]) -> List[List[str]]:
                         else:
                             word[i][2] = ''
                             word[i+1][0] = jong
+                            processed.add(i)
                     
                 elif jong in GYEOB_BATCHIM:
                     if jong in {'ㄶ', 'ㅀ'}:
                         word[i][2], word[i+1][0] = rule12(jong, next_cho)
                     elif jong == 'ㄾ' and next_jung == 'ㅣ':
                         word[i][2], word[i+1][0] = rule17(jong, next_cho, next_jung)
+                    elif (next_jung in {'ㅣ','ㅑ','ㅕ','ㅛ','ㅠ'} and 
+                            ((tag.startswith("NNG_C") and 
+                            next_tag.startswith("NNG_C") and 
+                            tag != next_tag) or
+                            tag == "MM")):
+                                word[i+1][0] = rule29()
                     elif next_jung in {'ㅏ','ㅓ','ㅗ','ㅜ','ㅟ','ㅣ'} and not next_tag.startswith(('J', 'E', 'X')):
-                            word[i][2] = ''
-                            word[i+1][0] = FINAL_NEUTRAL_MAP[jong]
+                        word[i][2] = ''
+                        word[i+1][0] = FINAL_NEUTRAL_MAP[jong]
+                        # processed.add(i)
                     else:
                         word[i][2], word[i+1][0] = SPLIT_FINAL_FOR_LIAISON[jong]
+                        processed.add(i)
+
                 elif jong in SSANG_BATCHIM:
                     word[i][2] = ''
                     word[i+1][0] = jong
+                    processed.add(i)
+
                 else:
                     if next_jung in {'ㅏ','ㅓ','ㅗ','ㅜ','ㅟ'}:
                         word[i][2] = ''
@@ -304,9 +335,11 @@ def algorithm(word: List[List[str]]) -> List[List[str]]:
                             word[i+1][0] = 'ㄹ'
                         else:
                             word[i+1][0] = 'ㄴ'
-            elif next_cho == 'ㅇ' and next_jung in {'ㅣ','ㅑ','ㅕ','ㅛ','ㅠ'} and next_tag.startswith("N"):
-                word[i+1][0] = rule29()
-                
+            
         else:
             continue
-    return word     
+
+    if word != original_word:
+        return algorithm(word, processed)
+    else:
+        return word  

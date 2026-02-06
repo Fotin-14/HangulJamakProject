@@ -1,8 +1,12 @@
 from korean_pronouncer import KoreanPronouncer
+from korean_pronouncer import rules
 
-sentence = KoreanPronouncer("아 이 진짜 짜증나게 하네")
+text = "누구 눈물 뭄바이 굿 울"
+sentence = KoreanPronouncer(text)
+mecab = sentence._mecab
 
-print(sentence.transformed_sentence())
-# print(sentence.list_romanizer())
-print(sentence.hangul_to_romanized())
 sentence.all_in_one()
+# print(sentence.hangul_to_romanized())
+# print(mecab.pos(text))
+# print(mecab.tagger.parse(text))
+# print(sentence._split_sentence())

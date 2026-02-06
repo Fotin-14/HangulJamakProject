@@ -2,7 +2,6 @@ import os
 import sys
 from konlpy.tag import Mecab
 from typing import List, Tuple
-# from korean_romanizer.romanizer import Romanizer
 from .custom_romanizer import Romanizer
 from .rules_table import (
     CHO_LIST,
@@ -18,6 +17,7 @@ BASE = 0xAC00
 N_CHO = 19
 N_JUNG = 21
 N_JONG = 28
+
 current_file_path = os.path.abspath(__file__)
 project_root = os.path.dirname(os.path.dirname(current_file_path))
 dicpath = os.path.join(project_root, 'mecab', 'mecab-ko-dic').replace('\\', '/')
@@ -31,14 +31,13 @@ except Exception as e:
 
 class KoreanPronouncer:
     def __init__(self, str):
-        print("\n** 객체 생성과 동시에 문장 입력 완료 **\n")
-        
         self.str = str
         self._mecab = _mecab_instance
 
     def __str__(self):
         return f"입력된 문장: '{self.str}'"
     
+    '''
     def _normalize_tag(self, tag: str) -> str:
         if tag in ("VV", "VV+ETM", "XSV+ETM", "VV+EC", "VX+EC"):
             return tag
@@ -60,6 +59,7 @@ class KoreanPronouncer:
             return "S"  # 기호
         else:
             return "UNK"  # 알 수 없는 태그
+    '''
     
     def _is_hangul_syll(self, ch: str) -> bool:
         o = ord(ch)
@@ -91,16 +91,34 @@ class KoreanPronouncer:
         
     def _token_to_jamo(self, token: Tuple[str, str]) -> List[str]:
         word, tag = token
-        norm_tag = self._normalize_tag(tag)
         rows: List[str] = []
-
-        for ch in word:
-            if self._is_hangul_syll(ch):
-                cho, jung, jong = self._decompose(ch)  # (초성, 중성, 종성) 문자열
-                rows.append([cho, jung, jong, norm_tag])
-            else:
-                # 숫자/영문/기호/공백 등 비한글 처리
-                rows.append([ch, "", "", norm_tag])
+    
+        # Compound 태그 처리 (C_2_3 형태)
+        if tag.startswith("C_"):
+            # "C_2_3" → [2, 3]
+            counts = list(map(int, tag[2:].split('_')))
+            
+            char_idx = 0
+            for morph_idx, count in enumerate(counts, start=1):
+                morph_tag = f"NNG_C{morph_idx}"
+                for _ in range(count):
+                    if char_idx < len(word):
+                        ch = word[char_idx]
+                        if self._is_hangul_syll(ch):
+                            cho, jung, jong = self._decompose(ch)
+                            rows.append([cho, jung, jong, morph_tag])
+                        else:
+                            rows.append([ch, "", "", morph_tag])
+                        char_idx += 1
+        else:
+            # 기존 로직
+            for ch in word:
+                if self._is_hangul_syll(ch):
+                    cho, jung, jong = self._decompose(ch)
+                    rows.append([cho, jung, jong, tag])
+                else:
+                    rows.append([ch, "", "", tag])
+        
         return rows
     
     def _extend_tokens(self, tokens: List[Tuple[str, str]]) -> List[List[str]]:
@@ -111,15 +129,68 @@ class KoreanPronouncer:
     
     def _split_sentence(self) -> List[List[str]]:
         all_results = []
-    
+
+        full_tokens = self._mecab.pos(self.str)
+
         words = self.str.split()
-        nested_list = [[word] for word in words]
-        for text in nested_list:
-            result = self._extend_tokens(self._mecab.pos(text[0]))
+
+        token_idx = 0
+        for word in words:
+            word_length = len(word)
+
+            current_tokens = []
+            char_count = 0
+
+            while token_idx < len(full_tokens) and char_count < word_length:
+                surface, tag = full_tokens[token_idx]
+                char_count += len(surface)
+                token_idx += 1
+
+                if tag == "NNG_C":
+                    new_tag = self._get_compound_tag(surface)
+                    current_tokens.append((surface, new_tag))
+                else:
+                    current_tokens.append((surface, tag))
+
+            result = self._extend_tokens(current_tokens)
             all_results.append(result)
-    
+
         return all_results
-    
+    # -----------------------------------------------------------------------
+    def _get_compound_tag(self, word: str) -> str:
+        """
+        Compound 단어의 형태소별 음절 수로 태그 생성
+        ex) 신문열람소 → C_2_3 (신문=2, 열람소=3)
+        """
+        raw_output = self._mecab.tagger.parse(word)
+
+        for line in raw_output.strip().split('\n'):
+            if line == 'EOS' or line == '':
+                continue
+            
+            parts = line.split('\t')
+            if len(parts) < 2:
+                continue
+            
+            features = parts[1].split(',')
+
+            # Compound 확인 (인덱스 4)
+            if len(features) > 4 and features[4] == 'Compound':
+                if len(features) > 7:
+                    compound_info = features[7]  # 신문/NNG/*+열람소/NNG/*
+
+                    # 각 형태소 음절 수 계산
+                    syllable_counts = []
+                    for part in compound_info.split('+'):
+                        morph_word = part.split('/')[0]  # "신문", "열람소"
+                        syllable_counts.append(str(len(morph_word)))
+
+                    # C_2_3 형태로 반환
+                    return "C_" + "_".join(syllable_counts)
+
+        return "NNG_C"  # fallback
+    # -----------------------------------------------------------------------
+
     def _recombine_korean(self, input_data: list) -> str:
     
         final_word = ""
@@ -142,26 +213,6 @@ class KoreanPronouncer:
                  
         return final_word
     
-    def _romanize_syllable(self, cho: str, jung: str, jong: str) -> str:
-        """
-        초성, 중성, 종성을 받아 로마자로 변환합니다.
-        """
-        # 중성(jung)이 비어있으면 비한글 문자이므로 cho에 담긴 문자를 그대로 반환
-        if not jung and not jong:
-            return cho
-        # 1. 초성 (Onset) 처리
-        # ONSET_ROMA에 정의된 대로 초성 'ㅇ'은 빈 문자열로 처리됩니다.
-        roman_cho = ONSET_ROMA.get(cho, cho)
-        # 2. 중성 (Vowel) 처리
-        roman_jung = VOWEL_ROMA.get(jung, jung)
-        # 3. 종성 (Coda) 처리
-        if not jong:
-            roman_jong = ""
-        else:
-            # CODA_ROMA 테이블을 사용하여 종성 처리 (중화된 발음을 사용)
-            roman_jong = CODA_ROMA.get(jong, jong)
-        return roman_cho + roman_jung + roman_jong
-    
     def _phonetic_transformer(self):
         modified_stc: List = []
         split_to_jamo = self._split_sentence()
@@ -173,28 +224,6 @@ class KoreanPronouncer:
     
     def transformed_sentence(self):
         return self._recombine_korean(self._phonetic_transformer())
-    
-    # def list_romanizer(self) -> List[str]:
-    #     romanized_list: List[str] = []
-    #     modified_stc = self._phonetic_transformer()
-
-    #     for i, part in enumerate(modified_stc):
-
-    #         for syllable_jamo_list in part:
-    #             jamo_only = syllable_jamo_list[:3]
-
-    #             cho = jamo_only[0]
-    #             jung = jamo_only[1]
-    #             jong = jamo_only[2] if len(jamo_only) > 2 and jamo_only[2] else ""
-
-    #             combined_romanized = self._romanize_syllable(cho, jung, jong) if cho in ONSET_ROMA else cho
-                
-    #             romanized_list.append(combined_romanized)
-
-    #         if i < len(modified_stc) - 1:
-    #             romanized_list.append(" ")
-                
-    #     return romanized_list
 
     def hangul_to_romanized(self):
         result = self.transformed_sentence()
@@ -204,9 +233,16 @@ class KoreanPronouncer:
     def all_in_one(self):
         result = self.transformed_sentence()
         converted_result = self.hangul_to_romanized()
-
+    
+        # 단어별로 분리
+        original_words = self.str.split()
+        transformed_words = result.split()
+    
+        # 단어별로 짝지어서 출력
+        paired = [f"{orig}[{trans}]" for orig, trans in zip(original_words, transformed_words)]
+        paired_output = " ".join(paired)
+    
         print("\n-------------------------")
-        print(f"기존 문장: {self.str}")
-        print(f"발음 규칙 적용: {result}")
-        print(f"자막 : {converted_result}")
+        print(paired_output)
+        print(f"자막: {converted_result}")
     
